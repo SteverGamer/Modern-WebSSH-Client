@@ -46,7 +46,6 @@ After the server starts, visit:
 ```
 http://localhost:8000
 ```
-Use this URL only (do not open `index.html` directly, as it requires the Node.js backend to function).
 
 ---
 
