@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>WebSSH Client</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+<style>
+body { transition: background 0.3s, color 0.3s; margin:0; height:100vh; overflow:hidden; }
+.dark-mode { background-color: #121212; color: #f0f0f0; }
+.connection-card {
+  border-radius: 1rem;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  transition: transform 0.2s;
+  background-color: rgba(30,30,30,0.7);
+  color: #f0f0f0;
+}
+.light-mode .connection-card { background-color: rgba(255,255,255,0.8); color: #000; }
+.connection-card:hover { transform: translateY(-3px); }
+.btn-rounded { border-radius: 30px; }
+.theme-toggle { position: absolute; top: 1rem; right: 1rem; z-index:100; }
+.terminal-exit { position: absolute; top: 1rem; right: 1rem; z-index:100; }
+.status-dot { height: 12px; width: 12px; border-radius: 50%; display: inline-block; margin-right: 0.5rem; }
+
+#landingPage { transition: opacity 0.5s ease; }
+#landingPage.hidden { opacity: 0; pointer-events: none; }
+
+#terminalContainerFull {
+  position: fixed; /* fixed ensures it covers the whole viewport */
+  top: 0;
+  left: 0;
+  width: 100vw; /* full viewport width */
+  height: 100vh; /* full viewport height */
+  background: #1e1e2f;
+  display: none;
+  flex-direction: column;
+}
+
+#terminalContainerFull.show { display:flex; }
+
+#terminalHeader {
+  height: 40px;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 0 10px;
+  z-index: 101;
+}
+#terminalHeader button { margin-left: 5px; }
+
+#terminalBody {
+  flex: 1 1 auto; /* grow to fill container */
+  width: 100%;
+  height: 100%;   /* make sure it fills */
+  overflow: hidden;
+}
+
+/* Light mode modal */
+body.light-mode .modal-themed {
+  background-color: #fff;
+  color: #000;
+}
+
+body.light-mode .modal-themed input.form-control {
+  background-color: #fff;
+  color: #000;
+  border-color: #ccc;
+}
+
+/* Dark mode modal */
+body.dark-mode .modal-themed {
+  background-color: #1e1e2f;
+  color: #f0f0f0;
+}
+
+body.dark-mode .modal-themed input.form-control {
+  background-color: #2c2c3c;
+  color: #f0f0f0;
+  border-color: #444;
+}
+
+/* Placeholder text */
+body.dark-mode .modal-themed input::placeholder {
+  color: #aaa;
+}
+
+body.light-mode .modal-themed input::placeholder {
+  color: #666;
+}
+
+/* Close button color */
+body.dark-mode .modal-themed .btn-close {
+  filter: invert(1); /* makes the X white */
+}
+
+body.light-mode .modal-themed .btn-close {
+  filter: invert(0); /* makes the X black */
+}
+
+</style>
+</head>
+<body>
+
+<audio id="connectSound" src="click-sound.mp3" preload="auto"></audio>
+<audio id="enterSound" src="enter-sound.mp3" preload="auto"></audio>
+
+<button class="btn btn-outline-secondary btn-rounded theme-toggle" id="themeToggle">
+  <i class="fa-solid fa-sun"></i>
+</button>
+
+<div id="landingPage" class="container my-5 text-center">
+  <h1 class="mb-4">🌐 WebSSH Connections</h1>
+  <div class="mb-4">
+    <button class="btn btn-success btn-rounded me-2" data-bs-toggle="modal" data-bs-target="#newConnectionModal">
+      <i class="fa fa-plug"></i> Add Connection
+    </button>
+  </div>
+  <div id="connectionsList" class="d-flex flex-wrap justify-content-center gap-3"></div>
+</div>
+
+<div id="terminalContainerFull">
+  <div id="terminalBody"></div>
+<!---  <button class="btn btn-outline-secondary btn-rounded terminal-exit" id="terminalExit">
+  <i class="fa-solid fa-right-from-bracket"></i>-->
+</button>
+</div>
+
+<div class="modal fade" id="newConnectionModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content rounded-4 modal-themed">
+      <div class="modal-header">
+        <h5 class="modal-title">Add Connection</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="newConnectionForm">
+          <input type="text" class="form-control mb-3" id="connName" placeholder="Connection Name" required>
+          <input type="text" class="form-control mb-3" id="connHost" placeholder="Host" required>
+          <input type="number" class="form-control mb-3" id="connPort" placeholder="Port" value="22" required>
+          <input type="text" class="form-control mb-3" id="connUser" placeholder="Username" required>
+          <input type="password" class="form-control mb-3" id="connPassword" placeholder="Password" required>
+          <button type="submit" class="btn btn-success btn-rounded w-100"><i class="fa fa-save"></i> Save Connection</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+
+<script>
+const themeToggle = document.getElementById("themeToggle");
+const body = document.body;
+const savedTheme = localStorage.getItem("theme") || "dark";
+if(savedTheme==="dark") body.classList.add("dark-mode"); else body.classList.add("light-mode");
+themeToggle.innerHTML = savedTheme==="dark"?'<i class="fa-solid fa-sun"></i>':'<i class="fa-solid fa-moon"></i>';
+
+let connections = JSON.parse(localStorage.getItem("connections") || "[]");
+const connectionsList = document.getElementById("connectionsList");
+const landingPage = document.getElementById("landingPage");
+const terminalContainerFull = document.getElementById("terminalContainerFull");
+const terminalBody = document.getElementById("terminalBody");
+const exitTerminal = document.getElementById("exitTerminal");
+const toggleTerminalTheme = document.getElementById("toggleTerminalTheme");
+let terminals = {};
+const statusColors = { "unreachable": "#fa624b", "reachable": "#68fa4b", "trying": "#fa9d4b" };
+
+// --- Terminal creation ---
+function getTerminalTheme() {
+  const mode = localStorage.getItem("theme");
+  return mode === "dark"
+    ? { background: '#1e1e2f', foreground: '#f0f0f0', cursor: '#68fa4b' }
+    : { background: '#f9f9f9', foreground: '#000000', cursor: '#007bff' };
+}
+function createTerminal(index) {
+  const ws = terminals[index].ws;
+  if(!ws || ws.readyState !== WebSocket.OPEN) return null;
+
+  const termDiv = document.createElement("div");
+  termDiv.style.width = "100%";
+  termDiv.style.height = "100%";
+  termDiv.style.flex = "1";
+
+  const term = new Terminal({
+    fontFamily: 'Fira Code, monospace',
+    fontSize: 14,
+    theme: getTerminalTheme(),
+    cursorBlink: true,
+    scrollback: 1000
+  });
+
+  const fitAddon = new FitAddon.FitAddon();
+  term.loadAddon(fitAddon);
+  term.open(termDiv);
+  fitAddon.fit();
+
+  const enterSound = document.getElementById("enterSound");
+  term.onData(d => {
+    if(ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type:'input', data:d }));
+    if(d === '\r' || d === '\n') {
+      enterSound.currentTime = 0;
+      enterSound.play();
+    }
+  });
+
+  // flush buffered data
+  if(terminals[index].buffer) {
+    terminals[index].buffer.forEach(chunk => term.write(chunk));
+    terminals[index].buffer = [];
+  }
+
+  terminals[index] = { ...terminals[index], term, container: termDiv, fitAddon };
+
+  window.addEventListener('resize', () => {
+    terminals[index]?.fitAddon?.fit();
+  });
+
+  return termDiv;
+}
+
+// --- Connect to WebSSH backend ---
+function sshEcho(conn, index) {
+  conn.status = "trying";
+  renderConnections();
+
+  const ws = new WebSocket(`ws://localhost:8001?host=${encodeURIComponent(conn.host)}&port=${encodeURIComponent(conn.port)}&user=${encodeURIComponent(conn.user)}&password=${encodeURIComponent(conn.password)}`);
+
+  const timeout = setTimeout(() => {
+    if(conn.status === "trying") {
+      conn.status = "unreachable";
+      renderConnections();
+      ws.close();
+    }
+  }, 5000);
+
+  // buffer for incoming data before terminal exists
+  const buffer = [];
+
+  ws.onmessage = msg => {
+    let data;
+    try { data = JSON.parse(msg.data); } catch { return; }
+
+    if(data.type === 'status') {
+      clearTimeout(timeout);
+      conn.status = data.status;
+      renderConnections();
+
+      if(data.status === 'reachable') {
+        terminals[index] = { ws, buffer }; // store buffer for later
+      } else ws.close();
+
+    } else if(data.type === 'data') {
+      // store data in buffer if terminal doesn't exist yet
+      if(terminals[index]?.term) {
+        terminals[index].term.write(data.data);
+      } else {
+        buffer.push(data.data);
+      }
+    }
+  };
+
+  ws.onerror = () => { clearTimeout(timeout); conn.status = 'unreachable'; renderConnections(); };
+  ws.onclose = () => { clearTimeout(timeout); };
+}
+
+// --- Connect fullscreen ---
+const terminalExit = document.getElementById("terminalExit");
+
+/*terminalExit.addEventListener("click", () => {
+  terminalContainerFull.classList.remove("show");
+  landingPage.classList.remove("hidden");
+  themeToggle.style.display = "block"; // show landing page theme toggle
+});*/
+
+function connectToServer(conn, index) {
+  if(conn.status !== "reachable") return;
+
+  const connectSound = document.getElementById("connectSound");
+  connectSound.currentTime = 0;
+  connectSound.play();
+
+  landingPage.classList.add("hidden");
+  terminalContainerFull.classList.add("show");
+  terminalBody.innerHTML = "";
+
+  const termDiv = createTerminal(index);
+  if(!termDiv) {
+    alert("Terminal cannot be created: WebSocket not ready.");
+    return;
+  }
+
+  terminalBody.appendChild(termDiv);
+  setTimeout(() => {
+    terminals[index].fitAddon.fit();
+    terminals[index].term.focus();
+  }, 50);
+
+  themeToggle.style.display = "none";
+}
+
+// --- Render connections ---
+function renderConnections(){
+  connectionsList.innerHTML="";
+  connections.forEach((conn,i)=>{
+    const disabled=conn.status!=="reachable"?"disabled":"";
+    const card=document.createElement("div");
+    card.className="card connection-card p-3 text-start";
+    card.style.width="220px";
+    card.innerHTML=`
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <span><span class="status-dot" style="background-color:${statusColors[conn.status]}"></span>${conn.name}</span>
+        <button class="btn btn-sm btn-danger btn-rounded" onclick="deleteConnection(${i})"><i class="fa fa-trash"></i></button>
+      </div>
+      <p class="mb-1"><i class="fa fa-server"></i> ${conn.host}:${conn.port}</p>
+      <p class="mb-2"><i class="fa fa-user"></i> ${conn.user}</p>
+      <button class="btn btn-sm btn-primary btn-rounded w-100" ${disabled} onclick="connectToServer(connections[${i}],${i})">
+        <i class="fa fa-plug"></i> Connect
+      </button>
+    `;
+    connectionsList.appendChild(card);
+  });
+}
+
+// --- Delete connection ---
+function deleteConnection(index){
+  if(terminals[index] && terminals[index].ws) terminals[index].ws.close();
+  delete terminals[index];
+  connections.splice(index,1);
+  localStorage.setItem("connections",JSON.stringify(connections));
+  renderConnections();
+}
+
+// --- Form handlers ---
+document.getElementById("newConnectionForm").addEventListener("submit",e=>{
+  e.preventDefault();
+  const conn={
+    name: document.getElementById("connName").value,
+    host: document.getElementById("connHost").value,
+    port: document.getElementById("connPort").value,
+    user: document.getElementById("connUser").value,
+    password: document.getElementById("connPassword").value,
+    status:"trying"
+  };
+  connections.push(conn);
+  localStorage.setItem("connections",JSON.stringify(connections));
+  bootstrap.Modal.getInstance(document.getElementById("newConnectionModal")).hide();
+  e.target.reset();
+  sshEcho(conn,connections.length-1);
+});
+
+// --- Landing page theme toggle ---
+themeToggle.addEventListener("click",()=>{
+  const mode = body.classList.contains("dark-mode")?"light":"dark";
+  body.classList.toggle("dark-mode");
+  body.classList.toggle("light-mode");
+  localStorage.setItem("theme",mode);
+  themeToggle.innerHTML=mode==="dark"?'<i class="fa-solid fa-sun"></i>':'<i class="fa-solid fa-moon"></i>';
+  Object.values(terminals).forEach(t=>{
+    t.term.setOption("theme",mode==="dark"
+      ? { background: '#1e1e2f', foreground: '#f0f0f0', cursor: '#68fa4b' }
+      : { background: '#f9f9f9', foreground: '#000000', cursor: '#007bff' }
+    );
+  });
+  renderConnections();
+});
+
+// --- Initialize ---
+connections.forEach((conn,i)=>sshEcho(conn,i));
+renderConnections();
+</script>
+</body>
+</html>
