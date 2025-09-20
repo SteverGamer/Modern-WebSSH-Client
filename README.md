@@ -23,7 +23,7 @@ The project was originally made as a fork of ssheasy with a more modern approach
 
 ### Clone Repository
 ```bash
-git clone https://github.com/SteverGamer/Mordern-WebSSH-Client.git
+git clone https://github.com/SteverGamer/Modern-WebSSH-Client.git
 cd modern-webssh-client
 ```
 
