@@ -1,4 +1,4 @@
-# WebSSH Client
+# Modern WebSSH Client
 
 A full-stack web-based SSH client that runs entirely on a Node.js server.  
 This project serves both the frontend (HTML/CSS/JS) and the backend WebSocket bridge, allowing users to connect to SSH servers securely from any modern web browser.
